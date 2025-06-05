@@ -1,0 +1,9 @@
+before:
+    ./test.sh 50
+
+    real    11m46.547s
+    user    11m33.598s
+    sys     0m4.837s
+
+after sed:
+
