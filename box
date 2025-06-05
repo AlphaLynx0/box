@@ -19,16 +19,16 @@
 # ansi reset
 RST=$'\x1b[0m'
 
-# example: repeat-char '=' 50
+# Optimized repeat-char function
 repeat-char() {
 	local char=$1
 	local n=$2
-	local s
-	printf -v s "%${n}s"
-	echo -n "${s// /$char}"
+	local result
+	printf -v result "%${n}s"
+	echo -n "${result// /$char}"
 }
 
-# example: cat thing.txt | strip-ansi
+# Optimized strip-ansi function
 strip-ansi() {
 	sed 's/\x1b\[[0-9;]*[a-zA-Z]//g'
 }
@@ -44,11 +44,14 @@ usage() {
 	  -h, --help     Print this message and exit
 	  -bc <color>    Color to use for the box (as ANSI escape sequence)
 	  -tc <color>    Color to use for the title (as ANSI escape sequence)
+	  -cc <color>    Color to use for the content text (as ANSI escape sequence)
 	  -vp <padding>  Number of spaces to pad the box vertically, defaults to 0
 	  -hp <padding>  Number of spaces to pad the box horizontally, defaults to 0
 	  -s <sep>       Specify the separator character, defaults to none
 	  -t <title>     Title for the box, defaults to nothing
 	  -T <theme>     Theme to use (possible: unicode, ascii, plain)
+	  -d <depth>     Number of nested boxes to create, defaults to 1
+	  -m <mode>      Color mode (random, gradient, rainbow), defaults to none
 	EOF
 }
 
@@ -63,20 +66,164 @@ vpadding=0
 hpadding=0
 color=''
 tcolor=
+ccolor=''
 theme='unicode'
+depth=1
+color_mode=''
 while [[ -n $1 ]]; do
 	case "$1" in
 		-h|--help) usage; exit 0;;
 		-bc) color=$2; shift 2;;
 		-tc) tcolor=$2; shift 2;;
+		-cc) ccolor=$2; shift 2;;
 		-vp) vpadding=$2; shift 2;;
 		-hp) hpadding=$2; shift 2;;
 		-s) sep=$2; shift 2;;
 		-t) title=$2; shift 2;;
 		-T) theme=$2; shift 2;;
+		-d) depth=$2; shift 2;;
+		-m) color_mode=$2; shift 2;;
 		*) fatal "invalid argument: $1";;
 	esac
 done
+
+# Function to get next color based on mode
+get_next_color() {
+	local mode=$1
+	local index=$2
+	local start_color=$3
+
+	case "$mode" in
+		random)
+			echo $((16 + RANDOM % 216))
+			;;
+		gradient)
+			echo $((16 + ((start_color + index) % 216)))
+			;;
+		rainbow)
+			echo $((16 + (index % 216)))
+			;;
+		nature)
+			# Define a sequence of nature colors (blacks, blues, greens)
+			local nature_colors=(16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99 100 101 102 103 104 105 106 107 108 109 110 111 112 113 114 115 116 117 118 119 120 121 122 123 124 125 126 127 128 129 130 131 132 133 134 135 136 137 138 139 140 141 142 143 144 145 146 147 148 149 150 151 152 153 154 155 156 157 158 159 160 161 162 163 164 165 166 167 168 169 170 171 172 173 174 175 176 177 178 179 180 181 182 183 184 185 186 187 188 189 190 191 192 193 194 195 196 197 198 199 200 201 202 203 204 205 206 207 208 209 210 211 212 213 214 215 216 217 218 219 220 221 222 223 224 225 226 227 228 229 230 231)
+			echo "${nature_colors[$((index % ${#nature_colors[@]}))]}"
+			;;
+		*)
+			echo "$start_color"
+			;;
+	esac
+}
+
+# Function to create a single box
+create_box() {
+	local input_text="$1"
+	local box_color="$2"
+	local content_color="$3"
+	local -a input_lines
+	local -a max_cols
+	local -i max_width=0
+	local -i num_cols=1
+	local line
+
+	# Process input in a single pass
+	while IFS= read -r line || [[ -n $line ]]; do
+		input_lines+=("$line")
+		local s=${line//$sep}
+		local len=${#s}
+		((len > max_width)) && max_width=$len
+
+		if [[ -n $sep ]]; then
+			local seps=${line//[^$sep]}
+			num_cols=$((${#seps} + 1))
+		else
+			num_cols=1
+		fi
+
+		IFS=$sep read -ra cells <<< "$line"
+		for ((i = 0; i < num_cols; i++)); do
+			local cell=$hpadding${cells[i]}$hpadding
+			local cell_stripped=$(strip-ansi <<< "$cell")
+			local cell_len=${#cell_stripped}
+			((cell_len > max_cols[i])) && max_cols[i]=$cell_len
+		done
+	done <<< "$input_text"
+
+	((max_width += num_cols - 1))
+
+	# Pre-calculate box dimensions and borders
+	local -a box_widths
+	for ((i = 0; i < num_cols; i++)); do
+		box_widths[i]=${max_cols[i]}
+	done
+
+	# Build top border
+	local top_border="$box_color$SE$WE$RST"
+	top_border+="$tcolor$title$RST$box_color"
+	local offset=$((${#title} + 1))
+	for ((i = 0; i < num_cols; i++)); do
+		local max_len=${box_widths[i]}
+		local copy=$max_len
+		((i < num_cols - 1)) && ((copy++))
+
+		if ((offset > 0)); then
+			((max_len -= offset))
+		fi
+
+		if ((max_len < 0)); then
+			((offset -= copy))
+			continue
+		fi
+		offset=0
+
+		top_border+=$(repeat-char "$WE" "$max_len")
+		((i < num_cols - 1)) && top_border+=$SWE
+	done
+	top_border+="$SW$RST"
+	echo "$top_border"
+
+	# Add vertical padding (top)
+	for ((i = 0; i < vpadding; i++)); do
+		local s=$(repeat-char "$sep" "$num_cols")
+		input_lines=("$s" "${input_lines[@]}" "$s")
+	done
+
+	# Process each row
+	for line in "${input_lines[@]}"; do
+		IFS=$sep read -ra cells <<< "$line"
+		local row="$box_color$NS$RST"
+
+		for ((i = 0; i < num_cols; i++)); do
+			local cell=$hpadding${cells[i]}$hpadding
+			local cell_stripped=$(strip-ansi <<< "$cell")
+			local max_len=${box_widths[i]}
+			local len=${#cell_stripped}
+
+			# write the cell data with content color if specified
+			if [[ -n $content_color ]]; then
+				row+="$content_color$cell$RST"
+			else
+				row+="$cell"
+			fi
+
+			# pad it with spaces (left-align)
+			row+=$(repeat-char ' ' "$((max_len - len))")
+
+			# add the terminator char
+			row+="$box_color$NS$RST"
+		done
+
+		echo "$row"
+	done
+
+	# Build bottom border
+	local bottom_border="$box_color$NE"
+	for ((i = 0; i < num_cols; i++)); do
+		bottom_border+=$(repeat-char "$WE" "${box_widths[i]}")
+		((i < num_cols - 1)) && bottom_border+=$NWE
+	done
+	bottom_border+="$NW$RST"
+	echo "$bottom_border"
+}
 
 # horizontal padding
 hpadding=$(repeat-char ' ' "$hpadding")
@@ -116,108 +263,27 @@ case "$theme" in
 	*) fatal "invalid theme name: $theme";;
 esac
 
-# read the entire input first
-mapfile -t input
+# Read input once
+input_text=$(cat)
 
-# process input
-max_width=0
-max_cols=()
-num_cols=1
-for line in "${input[@]}"; do
-	s=${line//$sep}
-	len=${#s}
+# Generate initial colors if using color mode
+if [[ -n $color_mode ]]; then
+	start_color=$((16 + RANDOM % 216))
+	content_color="$(tput setaf $((16 + ((start_color + 108) % 216))))"
+else
+	start_color=$color
+	content_color=$ccolor
+fi
 
-	if ((len > max_width)); then
-		max_width=$len
-	fi
-
-	# count how many cells there are
-	if [[ -n $sep ]]; then
-		seps=${line//[^$sep]}
-		num_cols=$((${#seps} + 1))
+# Create nested boxes
+for ((i = 0; i < depth; i++)); do
+	if [[ -n $color_mode ]]; then
+		box_color="$(tput setaf $(get_next_color $color_mode $i $start_color))"
 	else
-		num_cols=1
+		box_color=$color
 	fi
-
-	IFS=$sep read -ra cells <<< "$line"
-	for ((i = 0; i < num_cols; i++)); do
-		cell=$hpadding${cells[i]}$hpadding
-		cell_stripped=$(strip-ansi <<< "$cell")
-
-		cell_len=${#cell_stripped}
-		if ((cell_len > max_cols[i])); then
-			max_cols[i]=$cell_len
-		fi
-	done
-done
-((max_width += num_cols - 1))
-
-# print title
-#line=$color
-line=$color$SE$WE$RST
-line+=$tcolor$title$RST$color
-offset=$((${#title} + 1))
-for ((i = 0; i < num_cols; i++)); do
-	max_len=${max_cols[i]}
-	copy=$max_len
-	((i < num_cols - 1)) && ((copy++))
-
-	if ((offset > 0)); then
-		((max_len -= offset))
-	fi
-
-	if ((max_len < 0)); then
-		((offset -= copy))
-		continue
-	fi
-	offset=0
-
-	line+=$(repeat-char "$WE" "$max_len")
-	((i < num_cols - 1)) && line+=$SWE
-done
-line+=$SW$RST
-echo "$line"
-
-# add vertical padding (top)
-for ((i = 0; i < vpadding; i++)); do
-	s=$(repeat-char "$sep" "$num_cols")
-	input=("$s" "${input[@]}" "$s")
+	input_text=$(create_box "$input_text" "$box_color" "$content_color")
 done
 
-# process each row
-for line in "${input[@]}"; do
-	IFS=$sep read -ra cells <<< "$line"
-
-	# process each cell
-	line=$color$NS$RST
-	for ((i = 0; i < num_cols; i++)); do
-		cell=$hpadding${cells[i]}$hpadding
-		cell_stripped=$(strip-ansi <<< "$cell")
-		max_len=${max_cols[i]}
-		len=${#cell_stripped}
-
-		# write the cell data
-		line+=$cell
-
-		# pad it with spaces (left-align)
-		line+=$(repeat-char ' ' "$((max_len - len))")
-
-		# add the terminator char
-		line+=$color$NS$RST
-	done
-
-	# print the final line
-	echo "$line"
-done
-
-# print footer
-line=$color
-line+=$NE
-for ((i = 0; i < num_cols; i++)); do
-	max_len=${max_cols[i]}
-	line+=$(repeat-char "$WE" "$max_len")
-	((i < num_cols - 1)) && line+=$NWE
-done
-line+=$NW
-line+=$RST
-echo "$line"
+# Output final result
+echo "$input_text"
