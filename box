@@ -52,7 +52,7 @@ usage() {
 	  -t <title>     Title for the box, defaults to nothing
 	  -T <theme>     Theme to use (possible: unicode, ascii, plain)
 	  -d <depth>     Number of nested boxes to create, defaults to 1
-	  -m <mode>      Color mode (random, gradient, rainbow), defaults to none
+	  -m <mode>      Color mode (random, gradient, rainbow, nature, pride, trans, bi, pan, nb), defaults to none
 	EOF
 }
 
@@ -108,6 +108,31 @@ get_next_color() {
 			# Define a sequence of nature colors (blacks, blues, greens)
 			local nature_colors=(16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99 100 101 102 103 104 105 106 107 108 109 110 111 112 113 114 115 116 117 118 119 120 121 122 123 124 125 126 127 128 129 130 131 132 133 134 135 136 137 138 139 140 141 142 143 144 145 146 147 148 149 150 151 152 153 154 155 156 157 158 159 160 161 162 163 164 165 166 167 168 169 170 171 172 173 174 175 176 177 178 179 180 181 182 183 184 185 186 187 188 189 190 191 192 193 194 195 196 197 198 199 200 201 202 203 204 205 206 207 208 209 210 211 212 213 214 215 216 217 218 219 220 221 222 223 224 225 226 227 228 229 230 231)
 			echo "${nature_colors[$((index % ${#nature_colors[@]}))]}"
+			;;
+		pride)
+			# Traditional rainbow pride flag colors
+			local pride_colors=(196 208 226 46 21 129)
+			echo "${pride_colors[$((index % ${#pride_colors[@]}))]}"
+			;;
+		trans)
+			# Trans flag colors (light blue, pink, white, pink, light blue)
+			local trans_colors=(51 213 15 213 51)
+			echo "${trans_colors[$((index % ${#trans_colors[@]}))]}"
+			;;
+		bi)
+			# Bisexual flag colors (pink, purple, blue)
+			local bi_colors=(213 129 21)
+			echo "${bi_colors[$((index % ${#bi_colors[@]}))]}"
+			;;
+		pan)
+			# Pansexual flag colors (pink, yellow, blue)
+			local pan_colors=(213 226 21)
+			echo "${pan_colors[$((index % ${#pan_colors[@]}))]}"
+			;;
+		nb)
+			# Non-binary flag colors (yellow, white, purple, black)
+			local nb_colors=(226 15 129 0)
+			echo "${nb_colors[$((index % ${#nb_colors[@]}))]}"
 			;;
 		*)
 			echo "$start_color"
@@ -189,6 +214,7 @@ create_box() {
 	done
 
 	# Process each row
+	local line_index=0
 	for line in "${input_lines[@]}"; do
 		IFS=$sep read -ra cells <<< "$line"
 		local row="$box_color$NS$RST"
@@ -203,7 +229,13 @@ create_box() {
 			if [[ -n $content_color ]]; then
 				row+="$content_color$cell$RST"
 			else
-				row+="$cell"
+				# If no content color specified but color mode is set, use the color mode colors
+				if [[ -n $color_mode ]]; then
+					local content_color_code=$(get_next_color "$color_mode" "$((i + line_index))" "$start_color")
+					row+="\x1b[38;5;${content_color_code}m$cell$RST"
+				else
+					row+="$cell"
+				fi
 			fi
 
 			# pad it with spaces (left-align)
@@ -214,6 +246,7 @@ create_box() {
 		done
 
 		echo "$row"
+		((line_index++))
 	done
 
 	# Build bottom border
