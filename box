@@ -29,14 +29,9 @@ repeat-char() {
 }
 
 # example: cat thing.txt | strip-ansi
-strip-ansi() (
-	shopt -s extglob
-	local IFS=
-	local line
-	while read -r line || [[ -n $line ]]; do
-		printf '%s\n' "${line//$'\e'[\[(]*([0-9;])[@-n]/}"
-	done
-)
+strip-ansi() {
+	sed 's/\x1b\[[0-9;]*[a-zA-Z]//g'
+}
 
 usage() {
 	local prog=${0##*/}
