@@ -1,0 +1,9 @@
+# Go build artifacts
+box
+*.exe
+*.out
+*.test
+
+# Go module cache and build cache
+go.sum
+vendor/
