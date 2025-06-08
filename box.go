@@ -414,31 +414,28 @@ var (
 )
 
 var docsCmd = &cobra.Command{
-	Use:    "docs man",
-	Short:  "Generate man page",
-	Hidden: true, // Hide from help output
-	Long:   "Generate man page (box.1)",
-	Args:   cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		if args[0] != "man" {
-			fmt.Fprintln(os.Stderr, "Only man page generation is supported")
-			os.Exit(1)
-		}
+    Use:    "docs man",
+    Short:  "Generate man page",
+    Hidden: true, // Hide from help output
+    Args:   cobra.ExactArgs(1),
+    RunE: func(cmd *cobra.Command, args []string) error {
+        if args[0] != "man" {
+            return fmt.Errorf("only man page generation is supported")
+        }
 
-		header := &doc.GenManHeader{
-			Title:   "BOX",
-			Section: "1",
-			Source:  "Box Version 0.1.0",
-			Manual:  "User Commands",
-		}
+        header := &doc.GenManHeader{
+            Title:   "BOX",
+            Section: "1",
+            Source:  "Box Version 0.1.0",
+            Manual:  "User Commands",
+        }
 
-		err := doc.GenManTree(cmd.Root(), header, ".")
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		fmt.Println("Generated man page: box.1")
-	},
+        // write the manpage to stdout instead of to box.1
+        if err := doc.GenMan(cmd.Root(), header, os.Stdout); err != nil {
+            return err
+        }
+        return nil
+    },
 }
 
 var completionCmd = &cobra.Command{
