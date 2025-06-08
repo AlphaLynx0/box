@@ -308,96 +308,115 @@ func createNestedBoxes(
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "box",
-	Short: "A tool for creating text boxes in the terminal",
-	Long: `Box is a CLI tool for creating text boxes in the terminal.
+    Use:   "box",
+    Short: "Create box around text",
+    Long: `Box is a CLI tool for creating text boxes in the terminal.
 It supports various themes, colors, and nested boxes.
 
 Examples:
-  # Create a single box with a title
   echo "Hello, world!" | box -t "My Title"
-
-  # Create a nested box with a title and colors
   echo "Hello, world!" | box -t "My Title" -b "red" -c "blue" -n 2`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		// Read stdin
-		var lines []string
-		scanner := bufio.NewScanner(os.Stdin)
-		for scanner.Scan() {
-			lines = append(lines, scanner.Text())
-		}
-		if err := scanner.Err(); err != nil {
-			return err
-		}
+    RunE: func(cmd *cobra.Command, args []string) error {
+        // 1) read stdin
+        var lines []string
+        scanner := bufio.NewScanner(os.Stdin)
+        for scanner.Scan() {
+            lines = append(lines, scanner.Text())
+        }
+        if err := scanner.Err(); err != nil {
+            return err
+        }
 
-		// Parse comma-separated options
-		boxTitles := []string{}
-		if title != "" {
-			boxTitles = strings.Split(title, ",")
-		}
-		boxColors := []string{}
-		if boxColor != "" {
-			boxColors = strings.Split(boxColor, ",")
-		}
-		titleColors := []string{}
-		if titleColor != "" {
-			titleColors = strings.Split(titleColor, ",")
-		}
-		var contentColor *color.Color
-		if centerColor != "" {
-			contentColor = parseColor(centerColor)
-		}
-		depth := number
+        depth := number
 
-		// Initialize color theme if mode is specified
-		var colorTheme *ColorTheme
-		if mode != "" {
-			colorTheme = newColorTheme(mode)
-		}
+        // 2) split comma-lists
+        titles := []string{}
+        if title != "" {
+            titles = strings.Split(title, ",")
+        }
+        boxColors := []string{}
+        if boxColor != "" {
+            boxColors = strings.Split(boxColor, ",")
+        }
+        titleColors := []string{}
+        if titleColor != "" {
+            titleColors = strings.Split(titleColor, ",")
+        }
+        var contentColor *color.Color
+        if centerColor != "" {
+            contentColor = parseColor(centerColor)
+        }
 
-		// Pad lists to match depth
-		if len(boxTitles) < depth {
-			pad := make([]string, depth-len(boxTitles))
-			for i := range pad {
-				pad[i] = ""
-			}
-			boxTitles = append(pad, boxTitles...)
-		}
-		if len(boxColors) < depth && len(boxColors) > 0 {
-			pad := make([]string, depth-len(boxColors))
-			for i := range pad {
-				pad[i] = boxColors[0]
-			}
-			boxColors = append(pad, boxColors...)
-		}
-		if len(titleColors) < depth && len(titleColors) > 0 {
-			pad := make([]string, depth-len(titleColors))
-			for i := range pad {
-				pad[i] = titleColors[0]
-			}
-			titleColors = append(pad, titleColors...)
-		}
+        // 3) validate each list: must be either length 1 or exactly depth
+        validate := func(name string, list []string) error {
+            if len(list) == 0 {
+                return nil // flag not provided → skip
+            }
+            if len(list) != 1 && len(list) != depth {
+                return fmt.Errorf(
+                    "%s must have either 1 value or %d values, but got %d",
+                    name, depth, len(list),
+                )
+            }
+            return nil
+        }
+        if err := validate("-t/--title", titles); err != nil {
+            return err
+        }
+        if err := validate("-b/--box-colors", boxColors); err != nil {
+            return err
+        }
+        if err := validate("-c/--title-colors", titleColors); err != nil {
+            return err
+        }
 
-		// Build nested boxes
-		theme := getTheme(themeName)
-		resultLines := createNestedBoxes(
-			lines,
-			depth,
-			boxColors,
-			titleColors,
-			boxTitles,
-			theme,
-			vpadding,
-			hpadding,
-			contentColor,
-			colorTheme,
-		)
-		for _, l := range resultLines {
-			fmt.Println(l)
-		}
+        // 4) normalize single-element lists to full length
+        expand := func(list []string, defaultVal string) []string {
+            if len(list) == 0 {
+                // nothing provided → produce empty slots
+                return make([]string, depth)
+            }
+            if len(list) == 1 {
+                // pad to depth
+                expanded := make([]string, depth)
+                for i := 0; i < depth; i++ {
+                    expanded[i] = list[0]
+                }
+                return expanded
+            }
+            // already exactly depth
+            return list
+        }
+        boxTitles := expand(titles, "")
+        boxColors  = expand(boxColors, "")
+        titleColors = expand(titleColors, "")
 
-		return nil
-	},
+        // 5) init theme if needed
+        var colorTheme *ColorTheme
+        if mode != "" {
+            colorTheme = newColorTheme(mode)
+        }
+
+        // 6) draw
+        theme := getTheme(themeName)
+        result := createNestedBoxes(
+            lines,
+            depth,
+            boxColors,
+            titleColors,
+            boxTitles,
+            theme,
+            vpadding,
+            hpadding,
+            contentColor,
+            colorTheme,
+        )
+
+        for _, l := range result {
+            fmt.Println(l)
+        }
+        return nil
+    },
 }
 
 var (
