@@ -22,6 +22,69 @@ import (
 	"github.com/spf13/cobra/doc"
 )
 
+// resolveTextInput determines the source of text input and returns processed lines
+// It prioritizes stdin input when available and falls back to command line arguments
+func resolveTextInput(args []string) ([]string, error) {
+	// Check if stdin has available data
+	stat, err := os.Stdin.Stat()
+	if err != nil {
+		// Handle file stat errors gracefully with fallback to argument processing
+		// Log the error but continue with argument processing
+		fmt.Fprintf(os.Stderr, "Warning: unable to check stdin status (%v), using command line arguments\n", err)
+		lines := processArguments(args)
+		if len(lines) == 0 {
+			return nil, fmt.Errorf("no input provided: unable to read from stdin and no command line arguments given")
+		}
+		return lines, nil
+	}
+
+	// Check if stdin has data (pipe or redirect)
+	// When stdin is a character device (terminal), there's no piped data
+	// When stdin is NOT a character device, it means data is piped/redirected
+	hasStdinData := (stat.Mode() & os.ModeCharDevice) == 0
+
+	if hasStdinData {
+		// Read from stdin (preserve existing behavior)
+		var lines []string
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			lines = append(lines, scanner.Text())
+		}
+		if err := scanner.Err(); err != nil {
+			// Provide clear error message for stdin reading failures
+			return nil, fmt.Errorf("failed to read from stdin: %v", err)
+		}
+		return lines, nil
+	}
+
+	// No stdin data available, process command line arguments
+	lines := processArguments(args)
+	
+	// Handle empty input scenarios (no stdin, no arguments)
+	if len(lines) == 0 {
+		return nil, fmt.Errorf("no input provided: please provide text via stdin or command line arguments")
+	}
+	
+	return lines, nil
+}
+
+// processArguments converts command line arguments into text lines
+func processArguments(args []string) []string {
+	var lines []string
+	for _, arg := range args {
+		// Skip empty arguments to prevent empty lines
+		if arg == "" {
+			continue
+		}
+		
+		// Handle newline characters within arguments
+		// Split on literal \n sequences to create multiple lines
+		argLines := strings.Split(arg, "\\n")
+		lines = append(lines, argLines...)
+	}
+	return lines
+}
+
 var (
 	themeUnicode = map[string]string{
 		"WE": "━", "NS": "┃", "NW": "┏", "NE": "┓", "SW": "┗", "SE": "┛",
@@ -308,22 +371,27 @@ func createNestedBoxes(
 }
 
 var rootCmd = &cobra.Command{
-    Use:   "box",
+    Use:   "box [text...]",
     Short: "Create box around text",
     Long: `Box is a CLI tool for creating text boxes in the terminal.
 It supports various themes, colors, and nested boxes.
 
 Examples:
   echo "Hello, world!" | box -t "My Title"
-  echo "Hello, world!" | box -t "My Title" -b "red" -c "blue" -n 2`,
+  echo "Hello, world!" | box -t "My Title" -b "red" -c "blue" -n 2
+  box "Hello, world!" -t "My Title"
+  box "Line 1" "Line 2" "Line 3"`,
+    Args: cobra.ArbitraryArgs,
     RunE: func(cmd *cobra.Command, args []string) error {
-        // 1) read stdin
-        var lines []string
-        scanner := bufio.NewScanner(os.Stdin)
-        for scanner.Scan() {
-            lines = append(lines, scanner.Text())
-        }
-        if err := scanner.Err(); err != nil {
+        // 1) resolve text input (stdin or arguments)
+        lines, err := resolveTextInput(args)
+        if err != nil {
+            // Check if this is a "no input" error and display usage
+            if strings.Contains(err.Error(), "no input provided") {
+                cmd.Usage()
+                fmt.Fprintf(os.Stderr, "\nError: %v\n", err)
+                return nil // Don't return error to avoid double display
+            }
             return err
         }
 
