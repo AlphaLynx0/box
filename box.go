@@ -103,40 +103,83 @@ type Theme map[string]string
 type ColorTheme struct {
 	name       string
 	startColor int
+	usedColors map[int]bool
+	colorIndex int
 }
 
-// getNextColor returns the next color based on the theme and index
+// getNextColor returns the next color based on the theme and index, avoiding repetition
 func getNextColor(theme *ColorTheme, index int) int {
+	var candidateColors []int
+	
 	switch theme.name {
 	case "random":
-		return rand.Intn(216)
+		// For random, pick from unused colors or reset if all used
+		if len(theme.usedColors) >= 216 {
+			theme.usedColors = make(map[int]bool)
+		}
+		for {
+			color := rand.Intn(216)
+			if !theme.usedColors[color] {
+				theme.usedColors[color] = true
+				return color
+			}
+		}
 	case "gradient":
-		return (theme.startColor + index) % 216
+		// For gradient, continue from where we left off
+		color := (theme.startColor + theme.colorIndex) % 216
+		theme.colorIndex++
+		return color
 	case "rainbow":
-		return index % 216
+		// For rainbow, cycle through all 216 colors
+		color := theme.colorIndex % 216
+		theme.colorIndex++
+		return color
 	case "pride":
 		// Traditional rainbow pride flag colors
-		prideColors := []int{196, 208, 226, 46, 21, 129}
-		return prideColors[index%len(prideColors)]
+		candidateColors = []int{196, 208, 226, 46, 21, 129}
 	case "trans":
-		// Trans flag colors (light blue, pink, white, pink, light blue)
-		transColors := []int{51, 213, 15, 213, 51}
-		return transColors[index%len(transColors)]
+		// Trans flag colors (light blue, pink, white) - removed duplicates
+		candidateColors = []int{51, 213, 15}
 	case "bi":
 		// Bisexual flag colors (pink, purple, blue)
-		biColors := []int{213, 129, 21}
-		return biColors[index%len(biColors)]
+		candidateColors = []int{213, 129, 21}
 	case "pan":
 		// Pansexual flag colors (pink, yellow, blue)
-		panColors := []int{213, 226, 21}
-		return panColors[index%len(panColors)]
+		candidateColors = []int{213, 226, 21}
 	case "nb":
 		// Non-binary flag colors (yellow, white, purple, black)
-		nbColors := []int{226, 15, 129, 0}
-		return nbColors[index%len(nbColors)]
+		candidateColors = []int{226, 15, 129, 0}
 	default:
 		return theme.startColor
 	}
+	
+	// For flag themes, cycle through colors without repetition
+	if len(candidateColors) > 0 {
+		// Reset used colors if we've used all available colors in this theme
+		if len(theme.usedColors) >= len(candidateColors) {
+			theme.usedColors = make(map[int]bool)
+		}
+		
+		// Find next unused color in the theme
+		for i := 0; i < len(candidateColors); i++ {
+			colorIndex := (theme.colorIndex + i) % len(candidateColors)
+			color := candidateColors[colorIndex]
+			if !theme.usedColors[color] {
+				theme.usedColors[color] = true
+				theme.colorIndex = (colorIndex + 1) % len(candidateColors)
+				return color
+			}
+		}
+		
+		// Fallback: if all colors somehow used, reset and return first
+		theme.usedColors = make(map[int]bool)
+		color := candidateColors[0]
+		theme.usedColors[color] = true
+		theme.colorIndex = 1
+		return color
+	}
+	
+	return theme.startColor
 }
 
 // newColorTheme creates a new color theme with the given name
@@ -144,6 +187,8 @@ func newColorTheme(name string) *ColorTheme {
 	theme := &ColorTheme{
 		name:       name,
 		startColor: rand.Intn(216),
+		usedColors: make(map[int]bool),
+		colorIndex: 0,
 	}
 	return theme
 }
