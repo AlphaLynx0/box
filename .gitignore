@@ -3,3 +3,6 @@ box
 
 # Go module cache and build cache
 vendor/
+
+.kiro/
+.vscode/
